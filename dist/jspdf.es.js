@@ -1,7 +1,7 @@
 /** @license
  *
  * jsPDF - PDF Document creation from JavaScript
- * Version 2.3.0 Built on 2021-01-15T15:15:16.557Z
+ * Version 2.3.0 Built on 2021-02-09T16:16:31.301Z
  *                      CommitID 00000000
  *
  * Copyright (c) 2010-2020 James Hall <james@parall.ax>, https://github.com/MrRio/jsPDF
@@ -179,8 +179,8 @@ var saveAs =
     ? function saveAs() {
         /* noop */
       }
-    : // Use download attribute first if possible (#193 Lumia mobile)
-    "download" in HTMLAnchorElement.prototype
+    : // Use download attribute first if possible (#193 Lumia mobile) unless this is a native app
+    (typeof HTMLAnchorElement !== "undefined" && "download" in HTMLAnchorElement.prototype)
     ? function saveAs(blob, name, opts) {
         var URL = globalObject.URL || globalObject.webkitURL;
         var a = document.createElement("a");
@@ -12163,6 +12163,7 @@ var AcroForm = jsPDF.AcroForm;
     var amountOfLines = 0;
     var height = 0;
     var tempWidth = 0;
+    var scope = this;
 
     if (!Array.isArray(text) && typeof text !== "string") {
       if (typeof text === "number") {
@@ -13043,6 +13044,7 @@ function parseFontFamily(input) {
     this.currentPoint = ctx.currentPoint || new Point();
     this.miterLimit = ctx.miterLimit || 10.0;
     this.lastPoint = ctx.lastPoint || new Point();
+    this.margin = ctx.margin || [0, 0, 0, 0];
 
     this.ignoreClearRect =
       typeof ctx.ignoreClearRect === "boolean" ? ctx.ignoreClearRect : true;
@@ -13151,6 +13153,21 @@ function parseFontFamily(input) {
         if (!isNaN(value)) {
           _posY = value;
         }
+      }
+    });
+
+    var _margin = 0;
+    /**
+     * @name margin
+     * @type {array}
+     * @default [0, 0, 0, 0]
+     */
+    Object.defineProperty(this, "margin", {
+      get: function() {
+        return _margin;
+      },
+      set: function(value) {
+        _margin = value;
       }
     });
 
@@ -14518,13 +14535,26 @@ function parseFontFamily(input) {
       for (var i = min; i < max + 1; i++) {
         this.pdf.setPage(i);
 
+        var topMargin = i === min ? this.posY + this.margin[0] : this.margin[0];
+        var firstPageHeight =
+          this.pdf.internal.pageSize.height -
+          this.posY -
+          this.margin[0] -
+          this.margin[2];
+        var pageHeightMinusMargin =
+          this.pdf.internal.pageSize.height - this.margin[0] - this.margin[2];
+        var pageWidthMinusMargin =
+          this.pdf.internal.pageSize.width - this.margin[1];
+        var previousPageHeightSum =
+          i === 1 ? 0 : firstPageHeight + (i - 2) * pageHeightMinusMargin;
+
         if (this.ctx.clip_path.length !== 0) {
           var tmpPaths = this.path;
           clipPath = JSON.parse(JSON.stringify(this.ctx.clip_path));
           this.path = pathPositionRedo(
             clipPath,
-            this.posX,
-            -1 * this.pdf.internal.pageSize.height * (i - 1) + this.posY
+            this.posX + this.margin[3],
+            -1 * previousPageHeightSum + topMargin
           );
           drawPaths.call(this, "fill", true);
           this.path = tmpPaths;
@@ -14532,15 +14562,18 @@ function parseFontFamily(input) {
         var tmpRect = JSON.parse(JSON.stringify(xRect));
         tmpRect = pathPositionRedo(
           [tmpRect],
-          this.posX,
-          -1 * this.pdf.internal.pageSize.height * (i - 1) + this.posY
+          this.posX + this.margin[3],
+          -1 * previousPageHeightSum + topMargin
         )[0];
         this.pdf.addImage(
           img,
           "JPEG",
           tmpRect.x,
           tmpRect.y,
-          tmpRect.w,
+          Math.min(
+            tmpRect.w,
+            this.pdf.internal.pageSize.width - this.margin[1] - tmpRect.x
+          ),
           tmpRect.h,
           null,
           null,
@@ -14565,7 +14598,9 @@ function parseFontFamily(input) {
   var getPagesByPath = function(path, pageWrapX, pageWrapY) {
     var result = [];
     pageWrapX = pageWrapX || this.pdf.internal.pageSize.width;
-    pageWrapY = pageWrapY || this.pdf.internal.pageSize.height;
+    pageWrapY =
+      pageWrapY ||
+      this.pdf.internal.pageSize.height - this.margin[0] - this.margin[2];
 
     switch (path.type) {
       default:
@@ -14624,6 +14659,7 @@ function parseFontFamily(input) {
         addPage.call(this);
       }
     }
+
     return result;
   };
 
@@ -14714,13 +14750,24 @@ function parseFontFamily(input) {
         this.lineWidth = lineWidth;
         this.lineJoin = lineJoin;
 
+        var topMargin = k === 1 ? this.posY + this.margin[0] : this.margin[0];
+        var firstPageHeight =
+          this.pdf.internal.pageSize.height -
+          this.posY -
+          this.margin[0] -
+          this.margin[2];
+        var pageHeightMinusMargin =
+          this.pdf.internal.pageSize.height - this.margin[0] - this.margin[2];
+        var previousPageHeightSum =
+          k === min ? 0 : firstPageHeight + (k - 2) * pageHeightMinusMargin;
+
         if (this.ctx.clip_path.length !== 0) {
           var tmpPaths = this.path;
           clipPath = JSON.parse(JSON.stringify(this.ctx.clip_path));
           this.path = pathPositionRedo(
             clipPath,
-            this.posX,
-            -1 * this.pdf.internal.pageSize.height * (k - 1) + this.posY
+            this.posX + this.margin[3],
+            -1 * previousPageHeightSum + topMargin
           );
           drawPaths.call(this, rule, true);
           this.path = tmpPaths;
@@ -14728,8 +14775,8 @@ function parseFontFamily(input) {
         tmpPath = JSON.parse(JSON.stringify(origPath));
         this.path = pathPositionRedo(
           tmpPath,
-          this.posX,
-          -1 * this.pdf.internal.pageSize.height * (k - 1) + this.posY
+          this.posX + this.margin[3],
+          -1 * previousPageHeightSum + topMargin
         );
         if (isClip === false || k === 0) {
           drawPaths.call(this, rule, isClip);
@@ -15055,8 +15102,10 @@ function parseFontFamily(input) {
         textDimensions.h
       )
     );
+
     var pageArray = getPagesByPath.call(this, textXRect);
     var pages = [];
+
     for (var ii = 0; ii < pageArray.length; ii += 1) {
       if (pages.indexOf(pageArray[ii]) === -1) {
         pages.push(pageArray[ii]);
@@ -15066,29 +15115,48 @@ function parseFontFamily(input) {
     sortPages(pages);
 
     var clipPath, oldSize, oldLineWidth;
-    if (this.autoPaging === true) {
+    if (this.autoPaging) {
       var min = pages[0];
       var max = pages[pages.length - 1];
+
       for (var i = min; i < max + 1; i++) {
         this.pdf.setPage(i);
+
+        var topMargin = this.posY + this.margin[0];
+        var firstPageHeight =
+          this.pdf.internal.pageSize.height -
+          this.posY -
+          this.margin[0] -
+          (this.margin[2] * 2);
+        var pageHeightMinusMargin =
+          this.pdf.internal.pageSize.height - this.margin[0] - this.margin[2];
+        var pageWidthMinusMargin =
+          this.pdf.internal.pageSize.width - this.margin[1];
+        var previousPageHeightSum =
+          i === 1 ? 0 : firstPageHeight + (i - 2) * pageHeightMinusMargin;
 
         if (this.ctx.clip_path.length !== 0) {
           var tmpPaths = this.path;
           clipPath = JSON.parse(JSON.stringify(this.ctx.clip_path));
           this.path = pathPositionRedo(
             clipPath,
-            this.posX,
-            -1 * this.pdf.internal.pageSize.height * (i - 1) + this.posY
+            this.posX + this.margin[3],
+            -1 * previousPageHeightSum + topMargin
           );
           drawPaths.call(this, "fill", true);
           this.path = tmpPaths;
         }
+
         var tmpRect = JSON.parse(JSON.stringify(textRect));
         tmpRect = pathPositionRedo(
           [tmpRect],
-          this.posX,
-          -1 * this.pdf.internal.pageSize.height * (i - 1) + this.posY
+          this.posX + this.margin[3],
+          -1 * previousPageHeightSum + topMargin
         )[0];
+
+        if (tmpRect.y >= pageHeightMinusMargin) {
+          continue;
+        }
 
         if (options.scale >= 0.01) {
           oldSize = this.pdf.internal.getFontSize();
@@ -15096,12 +15164,22 @@ function parseFontFamily(input) {
           oldLineWidth = this.lineWidth;
           this.lineWidth = oldLineWidth * options.scale;
         }
-        this.pdf.text(options.text, tmpRect.x, tmpRect.y, {
-          angle: options.angle,
-          align: textAlign,
-          renderingMode: options.renderingMode,
-          maxWidth: options.maxWidth
-        });
+
+        if (
+          this.margin[0] <= tmpRect.y &&
+          tmpRect.y <= this.pdf.internal.pageSize.height - this.margin[2]
+        ) {
+          var croppedText = this.pdf.splitTextToSize(
+            options.text,
+            options.maxWidth || pageWidthMinusMargin - tmpRect.x
+          )[0];
+          this.pdf.text(croppedText, tmpRect.x, tmpRect.y, {
+            angle: options.angle,
+            align: textAlign,
+            renderingMode: options.renderingMode,
+            renderMaxWidthOverflow: false
+          });
+        }
 
         if (options.scale >= 0.01) {
           this.pdf.setFontSize(oldSize);
@@ -15115,12 +15193,17 @@ function parseFontFamily(input) {
         oldLineWidth = this.lineWidth;
         this.lineWidth = oldLineWidth * options.scale;
       }
-      this.pdf.text(options.text, pt.x + this.posX, pt.y + this.posY, {
-        angle: options.angle,
-        align: textAlign,
-        renderingMode: options.renderingMode,
-        maxWidth: options.maxWidth
-      });
+      this.pdf.text(
+        options.text,
+        pt.x + this.posX + this.margin[3],
+        pt.y + this.posY,
+        {
+          angle: options.angle,
+          align: textAlign,
+          renderingMode: options.renderingMode,
+          maxWidth: options.maxWidth
+        }
+      );
 
       if (options.scale >= 0.01) {
         this.pdf.setFontSize(oldSize);
@@ -16014,6 +16097,7 @@ function parseFontFamily(input) {
         pdf.context2d.autoPaging = true;
         pdf.context2d.posX = this.opt.x;
         pdf.context2d.posY = this.opt.y;
+        pdf.context2d.margin = this.opt.margin;
         pdf.context2d.fontFaces = fontFaces;
 
         if (fontFaces) {
@@ -31954,7 +32038,7 @@ var CompoundGlyph = (function() {
     MORE_COMPONENTS,
     WE_HAVE_AN_X_AND_Y_SCALE,
     WE_HAVE_A_SCALE,
-    WE_HAVE_A_TWO_BY_TWO;
+    WE_HAVE_A_TWO_BY_TWO;
   ARG_1_AND_2_ARE_WORDS = 0x0001;
   WE_HAVE_A_SCALE = 0x0008;
   MORE_COMPONENTS = 0x0020;
