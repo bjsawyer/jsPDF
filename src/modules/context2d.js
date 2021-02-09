@@ -164,7 +164,7 @@ import { jsPDF } from "../jspdf.js";
       }
     });
 
-    var _margin = 0;
+    var _margin = [0, 0, 0, 0];
     /**
      * @name margin
      * @type {array}
