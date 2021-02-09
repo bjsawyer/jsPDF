@@ -2205,6 +2205,10 @@ import { jsPDF } from "../jspdf.js";
           -1 * previousPageHeightSum + topMargin
         )[0];
 
+        if (tmpRect.y >= pageHeightMinusMargin) {
+          continue;
+        }
+
         if (options.scale >= 0.01) {
           oldSize = this.pdf.internal.getFontSize();
           this.pdf.setFontSize(oldSize * options.scale);
