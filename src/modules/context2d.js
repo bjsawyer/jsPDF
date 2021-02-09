@@ -2177,8 +2177,7 @@ import { jsPDF } from "../jspdf.js";
           this.pdf.internal.pageSize.height -
           this.posY -
           this.margin[0] -
-          this.margin[2] -
-          this.margin[0];
+          (this.margin[2] * 2);
         var pageHeightMinusMargin =
           this.pdf.internal.pageSize.height - this.margin[0] - this.margin[2];
         var pageWidthMinusMargin =
