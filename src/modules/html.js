@@ -7,9 +7,9 @@
  * http://opensource.org/licenses/mit-license
  */
 
+import { globalObject } from "../libs/globalObject.js";
 import { jsPDF } from "../jspdf.js";
 import { normalizeFontFace } from "../libs/fontFace.js";
-import { globalObject } from "../libs/globalObject.js";
 
 /**
  * jsPDF html PlugIn
@@ -451,6 +451,7 @@ import { globalObject } from "../libs/globalObject.js";
         pdf.context2d.autoPaging = true;
         pdf.context2d.posX = this.opt.x;
         pdf.context2d.posY = this.opt.y;
+        pdf.context2d.margin = this.opt.margin;
         pdf.context2d.fontFaces = fontFaces;
 
         if (fontFaces) {

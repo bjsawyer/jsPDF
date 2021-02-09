@@ -7,14 +7,15 @@
  * Licensed under the MIT License. http://opensource.org/licenses/mit-license
  */
 
-import { jsPDF } from "../jspdf.js";
-import { RGBColor } from "../libs/rgbcolor.js";
-import { console } from "../libs/console.js";
 import {
   buildFontFaceMap,
   parseFontFamily,
   resolveFontFace
 } from "../libs/fontFace.js";
+
+import { RGBColor } from "../libs/rgbcolor.js";
+import { console } from "../libs/console.js";
+import { jsPDF } from "../jspdf.js";
 
 /**
  * This plugin mimics the HTML5 CanvasRenderingContext2D.
@@ -51,6 +52,7 @@ import {
     this.currentPoint = ctx.currentPoint || new Point();
     this.miterLimit = ctx.miterLimit || 10.0;
     this.lastPoint = ctx.lastPoint || new Point();
+    this.margin = ctx.margin || [0, 0, 0, 0];
 
     this.ignoreClearRect =
       typeof ctx.ignoreClearRect === "boolean" ? ctx.ignoreClearRect : true;
@@ -159,6 +161,21 @@ import {
         if (!isNaN(value)) {
           _posY = value;
         }
+      }
+    });
+
+    var _margin = 0;
+    /**
+     * @name margin
+     * @type {array}
+     * @default [0, 0, 0, 0]
+     */
+    Object.defineProperty(this, "margin", {
+      get: function() {
+        return _margin;
+      },
+      set: function(value) {
+        _margin = value;
       }
     });
 
@@ -1566,13 +1583,26 @@ import {
       for (var i = min; i < max + 1; i++) {
         this.pdf.setPage(i);
 
+        var topMargin = i === min ? this.posY + this.margin[0] : this.margin[0];
+        var firstPageHeight =
+          this.pdf.internal.pageSize.height -
+          this.posY -
+          this.margin[0] -
+          this.margin[2];
+        var pageHeightMinusMargin =
+          this.pdf.internal.pageSize.height - this.margin[0] - this.margin[2];
+        var pageWidthMinusMargin =
+          this.pdf.internal.pageSize.width - this.margin[1];
+        var previousPageHeightSum =
+          i === 1 ? 0 : firstPageHeight + (i - 2) * pageHeightMinusMargin;
+
         if (this.ctx.clip_path.length !== 0) {
           var tmpPaths = this.path;
           clipPath = JSON.parse(JSON.stringify(this.ctx.clip_path));
           this.path = pathPositionRedo(
             clipPath,
-            this.posX,
-            -1 * this.pdf.internal.pageSize.height * (i - 1) + this.posY
+            this.posX + this.margin[3],
+            -1 * previousPageHeightSum + topMargin
           );
           drawPaths.call(this, "fill", true);
           this.path = tmpPaths;
@@ -1580,15 +1610,18 @@ import {
         var tmpRect = JSON.parse(JSON.stringify(xRect));
         tmpRect = pathPositionRedo(
           [tmpRect],
-          this.posX,
-          -1 * this.pdf.internal.pageSize.height * (i - 1) + this.posY
+          this.posX + this.margin[3],
+          -1 * previousPageHeightSum + topMargin
         )[0];
         this.pdf.addImage(
           img,
           "JPEG",
           tmpRect.x,
           tmpRect.y,
-          tmpRect.w,
+          Math.min(
+            tmpRect.w,
+            this.pdf.internal.pageSize.width - this.margin[1] - tmpRect.x
+          ),
           tmpRect.h,
           null,
           null,
@@ -1613,7 +1646,9 @@ import {
   var getPagesByPath = function(path, pageWrapX, pageWrapY) {
     var result = [];
     pageWrapX = pageWrapX || this.pdf.internal.pageSize.width;
-    pageWrapY = pageWrapY || this.pdf.internal.pageSize.height;
+    pageWrapY =
+      pageWrapY ||
+      this.pdf.internal.pageSize.height - this.margin[0] - this.margin[2];
 
     switch (path.type) {
       default:
@@ -1672,6 +1707,7 @@ import {
         addPage.call(this);
       }
     }
+
     return result;
   };
 
@@ -1762,13 +1798,24 @@ import {
         this.lineWidth = lineWidth;
         this.lineJoin = lineJoin;
 
+        var topMargin = k === 1 ? this.posY + this.margin[0] : this.margin[0];
+        var firstPageHeight =
+          this.pdf.internal.pageSize.height -
+          this.posY -
+          this.margin[0] -
+          this.margin[2];
+        var pageHeightMinusMargin =
+          this.pdf.internal.pageSize.height - this.margin[0] - this.margin[2];
+        var previousPageHeightSum =
+          k === min ? 0 : firstPageHeight + (k - 2) * pageHeightMinusMargin;
+
         if (this.ctx.clip_path.length !== 0) {
           var tmpPaths = this.path;
           clipPath = JSON.parse(JSON.stringify(this.ctx.clip_path));
           this.path = pathPositionRedo(
             clipPath,
-            this.posX,
-            -1 * this.pdf.internal.pageSize.height * (k - 1) + this.posY
+            this.posX + this.margin[3],
+            -1 * previousPageHeightSum + topMargin
           );
           drawPaths.call(this, rule, true);
           this.path = tmpPaths;
@@ -1776,8 +1823,8 @@ import {
         tmpPath = JSON.parse(JSON.stringify(origPath));
         this.path = pathPositionRedo(
           tmpPath,
-          this.posX,
-          -1 * this.pdf.internal.pageSize.height * (k - 1) + this.posY
+          this.posX + this.margin[3],
+          -1 * previousPageHeightSum + topMargin
         );
         if (isClip === false || k === 0) {
           drawPaths.call(this, rule, isClip);
@@ -2105,8 +2152,10 @@ import {
         textDimensions.h
       )
     );
+
     var pageArray = getPagesByPath.call(this, textXRect);
     var pages = [];
+
     for (var ii = 0; ii < pageArray.length; ii += 1) {
       if (pages.indexOf(pageArray[ii]) === -1) {
         pages.push(pageArray[ii]);
@@ -2116,28 +2165,44 @@ import {
     sortPages(pages);
 
     var clipPath, oldSize, oldLineWidth;
-    if (this.autoPaging === true) {
+    if (this.autoPaging) {
       var min = pages[0];
       var max = pages[pages.length - 1];
+
       for (var i = min; i < max + 1; i++) {
         this.pdf.setPage(i);
+
+        var topMargin = this.posY + this.margin[0];
+        var firstPageHeight =
+          this.pdf.internal.pageSize.height -
+          this.posY -
+          this.margin[0] -
+          this.margin[2] -
+          this.margin[0];
+        var pageHeightMinusMargin =
+          this.pdf.internal.pageSize.height - this.margin[0] - this.margin[2];
+        var pageWidthMinusMargin =
+          this.pdf.internal.pageSize.width - this.margin[1];
+        var previousPageHeightSum =
+          i === 1 ? 0 : firstPageHeight + (i - 2) * pageHeightMinusMargin;
 
         if (this.ctx.clip_path.length !== 0) {
           var tmpPaths = this.path;
           clipPath = JSON.parse(JSON.stringify(this.ctx.clip_path));
           this.path = pathPositionRedo(
             clipPath,
-            this.posX,
-            -1 * this.pdf.internal.pageSize.height * (i - 1) + this.posY
+            this.posX + this.margin[3],
+            -1 * previousPageHeightSum + topMargin
           );
           drawPaths.call(this, "fill", true);
           this.path = tmpPaths;
         }
+
         var tmpRect = JSON.parse(JSON.stringify(textRect));
         tmpRect = pathPositionRedo(
           [tmpRect],
-          this.posX,
-          -1 * this.pdf.internal.pageSize.height * (i - 1) + this.posY
+          this.posX + this.margin[3],
+          -1 * previousPageHeightSum + topMargin
         )[0];
 
         if (options.scale >= 0.01) {
@@ -2146,12 +2211,22 @@ import {
           oldLineWidth = this.lineWidth;
           this.lineWidth = oldLineWidth * options.scale;
         }
-        this.pdf.text(options.text, tmpRect.x, tmpRect.y, {
-          angle: options.angle,
-          align: textAlign,
-          renderingMode: options.renderingMode,
-          maxWidth: options.maxWidth
-        });
+
+        if (
+          this.margin[0] <= tmpRect.y &&
+          tmpRect.y <= this.pdf.internal.pageSize.height - this.margin[2]
+        ) {
+          var croppedText = this.pdf.splitTextToSize(
+            options.text,
+            options.maxWidth || pageWidthMinusMargin - tmpRect.x
+          )[0];
+          this.pdf.text(croppedText, tmpRect.x, tmpRect.y, {
+            angle: options.angle,
+            align: textAlign,
+            renderingMode: options.renderingMode,
+            renderMaxWidthOverflow: false
+          });
+        }
 
         if (options.scale >= 0.01) {
           this.pdf.setFontSize(oldSize);
@@ -2165,12 +2240,17 @@ import {
         oldLineWidth = this.lineWidth;
         this.lineWidth = oldLineWidth * options.scale;
       }
-      this.pdf.text(options.text, pt.x + this.posX, pt.y + this.posY, {
-        angle: options.angle,
-        align: textAlign,
-        renderingMode: options.renderingMode,
-        maxWidth: options.maxWidth
-      });
+      this.pdf.text(
+        options.text,
+        pt.x + this.posX + this.margin[3],
+        pt.y + this.posY,
+        {
+          angle: options.angle,
+          align: textAlign,
+          renderingMode: options.renderingMode,
+          maxWidth: options.maxWidth
+        }
+      );
 
       if (options.scale >= 0.01) {
         this.pdf.setFontSize(oldSize);
